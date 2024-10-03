@@ -10,14 +10,23 @@ on:
 env:
     MONGO_URI: 'mongodb+srv://supercluster.d83jj.mongodb.net/superData'
     MONGO_USERNAME: ${{ vars.MONGO_USERNAME }}
-    MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+    MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}     
 
 jobs:
     unit-testing:
         name: Unit Testing
+        services:
+          mongo-db:
+            image: siddharth67/mongo-db:non-prod
+            ports:
+              - 27017:27017
+        env:
+            MONGO_URI: 'mongodb://localhost:27017/superData'
+            MONGO_USERNAME: non-prod-user
+            MONGO_PASSWORD: non-prod-password
         strategy:
             matrix:
-                nodejs_version: [18]
+                nodejs_version: [18, 20]
                 operating_system: [ubuntu-latest]
                 exclude:
                     - nodejs_version: 18
@@ -54,22 +63,34 @@ jobs:
 
     code-coverage:
         name: Code Coverage
+        container: 
+            image: node:18
+        services:
+          mongo-db:
+            image: siddharth67/mongo-db:non-prod
+            options: 
+                --name mongo
+        env:
+            MONGO_URI: 'mongodb://mongo:27017/superData'
+            MONGO_USERNAME: non-prod-user
+            MONGO_PASSWORD: non-prod-password
         runs-on: ubuntu-latest
         steps:
         - name: Checkout Repository
           uses: actions/checkout@v4
 
-        - name: Setup NodeJS Version - 18
-          uses: actions/setup-node@v3
-          with:
-            node-version: 18
+        # - name: Setup NodeJS Version - 18
+        #   uses: actions/setup-node@v3
+        #   with:
+        #     node-version: 18
 
         - name: Cache NPM dependencies
           uses: actions/cache@v3
           with:
             path: node_modules
             key: ${{ runner.os }}-node-modules-${{ hashFiles('package-lock.json') }}
-            
+
+
         - name: Install Dependencies
           run: npm install
 
@@ -85,30 +106,30 @@ jobs:
             retention-days: 5
 
     docker:
-        name: containerization
+        name: Containerization
         needs: [unit-testing, code-coverage]
         permissions: 
-          packages: write
+           packages: write
         runs-on: ubuntu-latest
         steps:
-        - name: Checkout Repository
+        - name: Checkout Repo
           uses: actions/checkout@v4
 
-        - name: Docker Login
-          uses: docker/login-action@v3.3.0
+        - name: Dockerhub Login
+          uses: docker/login-action@v2.2.0
           with:
             username: ${{ vars.DOCKERHUB_USERNAME }}
             password: ${{ secrets.DOCKERHUB_PASSWORD }}
 
         - name: GHCR Login
-          uses: docker/login-action@v3.3.0
+          uses: docker/login-action@v2.2.0
           with:
             registry: ghcr.io
             username: ${{ github.repository_owner }}
             password: ${{ secrets.GITHUB_TOKEN }}
 
-        - name: Build for testing
-          uses: docker/build-push-action@v6
+        - name: Docker Build For Testing
+          uses: docker/build-push-action@v4
           with:
             context: .
             push: false
@@ -130,11 +151,11 @@ jobs:
             echo Testing Image URL using wget 
             wget -q -O - 127.0.0.1:3000/live | grep live
 
-        - name: Docker Push
-          uses: docker/build-push-action@v6
+        - name: Container Registry Push
+          uses: docker/build-push-action@v4
           with:
             context: .
             push: true
             tags: |
-              ${{ vars.DOCKERHUB_USERNAME }}/solar-system:${{ github.sha }}
-              ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
+                ${{ vars.DOCKERHUB_USERNAME }}/solar-system:${{ github.sha }}
+                ghcr.io/${{ github.repository_owner }}/solar-system:${{ github.sha }}
